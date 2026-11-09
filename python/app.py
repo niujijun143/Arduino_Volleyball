@@ -5,7 +5,10 @@ through the Arduino Bridge. main.py wires the Bridge in with link.attach().
 
 Bridge contract with sketch/sketch.ino:
   Python -> MCU   Bridge.call("command", "<text>")   returns the MCU's reply string
-                    HOME | PON | POFF | KILL | PING | MOVE,<vertical>,<horizontal>,<speed>
+                    PON | POFF | HOMEL | HOMER | KILL
+                    MOVE,<height>,<length>,<speed>
+                    STATE  ->  "STATE,<L|R|N>,<height>,<length>"
+                              (home side L/R or N = not set; feet)
   MCU -> Python   Bridge.notify("speed", <float>)    one speed-sensor reading
 """
 import sqlite3
@@ -16,7 +19,20 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 DB = str(Path(__file__).resolve().parent / "data.db")  # created on first start
-PING_EVERY = 2.0  # seconds between link checks
+POLL_EVERY = 1.0  # seconds between state/link checks
+
+# Travel limits. The page maps the drag area onto these (most down / most left = 0).
+VERTICAL_MAX = 11.0    # ft, height of the arm block
+HORIZONTAL_MAX = 12.0  # ft, length along the rail
+SPEED_MAX = 1.0        # ft/s
+
+COMMANDS = {
+    "on": "PON",
+    "off": "POFF",
+    "home-left": "HOMEL",
+    "home-right": "HOMER",
+    "kill": "KILL",
+}
 
 app = Flask(__name__)
 
@@ -38,22 +54,24 @@ def init_db():
 
 
 class McuLink:
-    """Talks to the sketch over the Bridge, stores speed readings, tracks the last reply.
+    """Talks to the sketch over the Bridge, stores speed readings, tracks the robot state.
 
-    A background thread pings the MCU so the status line shows whether it is reachable.
+    A background thread asks the MCU for its state every POLL_EVERY seconds, which also
+    tells us whether the MCU is reachable.
     """
 
     def __init__(self):
         self.bridge = None
         self.connected = False
         self.last_reply = "no data yet"
+        self.state = {"home": None, "height": None, "length": None}
         self.lock = threading.Lock()  # one Bridge call at a time
 
     def attach(self, bridge):
-        """Register for speed readings from the MCU and start the link check."""
+        """Register for speed readings from the MCU and start the state polling."""
         self.bridge = bridge
         bridge.provide("speed", self.on_speed)
-        threading.Thread(target=self._ping_loop, daemon=True).start()
+        threading.Thread(target=self._poll_loop, daemon=True).start()
 
     def on_speed(self, value):
         try:
@@ -64,28 +82,41 @@ class McuLink:
             con.execute("INSERT INTO speed_records (speed) VALUES (?)", (value,))
 
     def _call(self, cmd):
-        """Send one command; returns True if the MCU answered."""
+        """Send one command. Returns (answered, reply)."""
         if self.bridge is None:
-            return False
+            return False, None
         with self.lock:
             try:
                 reply = self.bridge.call("command", cmd)
             except Exception as e:  # Bridge raises on timeout / MCU not running
                 self.connected = False
                 self.last_reply = f"bridge error: {e}"
-                return False
+                return False, None
         self.connected = True
-        if cmd != "PING":
+        if cmd == "STATE":
+            self._parse_state(reply)
+        else:
             self.last_reply = str(reply)
-        return True
+        return True, reply
 
-    def _ping_loop(self):
+    def _parse_state(self, reply):
+        parts = str(reply).split(",")
+        if len(parts) != 4 or parts[0] != "STATE":
+            return
+        try:
+            height, length = float(parts[2]), float(parts[3])
+        except ValueError:
+            return
+        self.state = {"home": {"L": "left", "R": "right"}.get(parts[1]),
+                      "height": height, "length": length}
+
+    def _poll_loop(self):
         while True:
-            self._call("PING")
-            time.sleep(PING_EVERY)
+            self._call("STATE")
+            time.sleep(POLL_EVERY)
 
     def send(self, cmd):
-        return self._call(cmd)
+        return self._call(cmd)[0]
 
 
 link = McuLink()
@@ -96,7 +127,7 @@ def valid_move(d):
         v, h, s = float(d["vertical"]), float(d["horizontal"]), float(d["speed"])
     except (KeyError, TypeError, ValueError):
         return None
-    if not (0 <= v <= 11 and 0 <= h <= 12 and 0 <= s <= 3):
+    if not (0 <= v <= VERTICAL_MAX and 0 <= h <= HORIZONTAL_MAX and 0 <= s <= SPEED_MAX):
         return None
     return v, h, s
 
@@ -106,12 +137,16 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/api/config")
+def config():
+    return jsonify(vertical_max=VERTICAL_MAX, horizontal_max=HORIZONTAL_MAX, speed_max=SPEED_MAX)
+
+
 @app.post("/api/cmd/<name>")
 def cmd(name):
-    m = {"home": "HOME", "on": "PON", "off": "POFF", "kill": "KILL"}
-    if name not in m:
+    if name not in COMMANDS:
         return jsonify(ok=False, error="bad command"), 400
-    return jsonify(ok=link.send(m[name]))
+    return jsonify(ok=link.send(COMMANDS[name]))
 
 
 @app.post("/api/move")
@@ -124,7 +159,7 @@ def move():
 
 @app.get("/api/status")
 def status():
-    return jsonify(reply=link.last_reply, connected=link.connected)
+    return jsonify(reply=link.last_reply, connected=link.connected, **link.state)
 
 
 @app.get("/api/drills")

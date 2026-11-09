@@ -1,101 +1,471 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pi Control</title>
+<title>Volleyball Blocker</title>
+<link rel="icon" href="data:,">
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 12px; }
-  section { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-bottom: 14px; }
-  h2 { margin-top: 0; }
-  button { padding: 8px 14px; margin: 3px; font-size: 1rem; }
-  .kill { background: #c00; color: #fff; }
-  .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
-  .row label { width: 150px; } .row input[type=range] { flex: 1; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; }
-  #status { font-family: monospace; color: #555; }
+  :root {
+    --bg: #f3f4f6; --card: #fff; --ink: #1b222c; --muted: #667085; --line: #e4e7ec;
+    --accent: #d2700f; --accent-d: #b25c08; --ok: #1a9d5c; --bad: #d92d20;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 4px 14px rgba(16,24,40,.06);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 20px 14px 70px; }
+
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  h1 { font-size: 1.5rem; margin: 0; letter-spacing: -.01em; }
+  .sub { margin: 2px 0 0; color: var(--muted); font-size: .9rem; }
+  .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+           font-size: .85rem; font-weight: 600; background: #fff; border: 1px solid var(--line);
+           box-shadow: var(--shadow); white-space: nowrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+  .badge.on .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(26,157,92,.18); }
+
+  .card { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 18px; margin-bottom: 16px; }
+  h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 1.1rem; }
+  .n { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+       background: var(--accent); color: #fff; font-size: .85rem; font-weight: 700; }
+
+  .btn { font: inherit; font-weight: 600; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line);
+         background: #fff; color: var(--ink); cursor: pointer; display: inline-flex; align-items: center;
+         justify-content: center; gap: 8px; transition: background .12s, border-color .12s, transform .05s; }
+  .btn:hover { background: #f7f8fa; border-color: #cfd4dc; }
+  .btn:active { transform: translateY(1px); }
+  .btn svg { width: 18px; height: 18px; flex: none; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-d); border-color: var(--accent-d); }
+  .btn.on { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .btn.on:hover { background: #168550; border-color: #168550; }
+  .btn.off { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .btn.off:hover { background: #2c3644; border-color: #2c3644; }
+  .btn.sm { padding: 6px 12px; font-size: .9rem; border-radius: 8px; }
+  .btn.danger { color: var(--bad); }
+
+  .btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tile { background: #f7f8fa; border-radius: 12px; padding: 12px 14px; }
+  .tile .k { font-size: .85rem; color: var(--muted); }
+  .tile .v { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .small { margin: 10px 0 0; color: var(--muted); font-size: .8rem; font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+  .pad { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px;
+         background: #fcfcfd; user-select: none; -webkit-user-select: none; }
+  .range { fill: none; stroke: #c3c9d3; stroke-width: 2; stroke-dasharray: 7 7; }
+  .lbl { font-size: 14px; fill: #7a8494; }
+  #arm { cursor: grab; touch-action: none; outline: none; }
+  #arm.drag { cursor: grabbing; }
+  #arm .ring { display: none; fill: rgba(210,112,15,.06); stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 5; }
+  #arm:focus-visible .ring, #arm.drag .ring { display: block; }
+  #arm:hover .panel, #arm.drag .panel { filter: brightness(1.08); }
+  .hint { margin: 8px 2px 0; color: var(--muted); font-size: .82rem; }
+
+  .readout { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 0; }
+  .chip { display: flex; justify-content: space-between; align-items: baseline; background: #f7f8fa;
+          border-radius: 12px; padding: 9px 14px; }
+  .chip .k { font-size: .85rem; color: var(--muted); }
+  .chip .v { font-size: 1.2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .speed { margin: 16px 0 0; }
+  .speed label { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
+  .speed output { font-variant-numeric: tabular-nums; color: var(--accent-d); }
+  .speed input { width: 100%; accent-color: var(--accent); margin: 8px 0 2px; }
+  .ends { display: flex; justify-content: space-between; color: var(--muted); font-size: .8rem; }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+  .actions .primary { min-width: 120px; }
+  .save { display: flex; gap: 8px; flex: 1; min-width: 240px; }
+  .save input { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+  .save input:focus { outline: 2px solid rgba(210,112,15,.35); border-color: var(--accent); }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 440px; }
+  th { font-size: .85rem; font-weight: 600; color: var(--muted); text-align: left;
+       padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  td { padding: 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  td.act { text-align: right; white-space: nowrap; }
+  tr.sel td { background: #fff6ec; }
+  td.empty { color: var(--muted); text-align: center; padding: 22px 10px; }
+
+  #toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 20px); background: var(--ink);
+           color: #fff; padding: 10px 16px; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+           opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: 90vw; font-size: .92rem; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.bad { background: var(--bad); }
+
+  @media (max-width: 600px) {
+    .btns { grid-template-columns: 1fr 1fr; }
+    .tile { padding: 10px; } .tile .v { font-size: 1.1rem; }
+    .actions .primary { flex: 1; }
+    table { min-width: 0; }
+    th, td { padding: 8px 5px; }
+    td.act { white-space: normal; }
+    td.act .btn { display: flex; width: 100%; }
+    td.act .btn + .btn { margin-top: 6px; }
+  }
 </style>
 </head>
 <body>
-<p id="status">status: ...</p>
+<div class="wrap">
 
-<section>
-  <h2>1. Function</h2>
-  <button onclick="cmd('home')">Home</button>
-  <button onclick="cmd('on')">Power On</button>
-  <button onclick="cmd('off')">Power Off</button>
-  <button class="kill" onclick="cmd('kill')">Kill</button>
+<header class="top">
+  <div>
+    <h1>Volleyball Blocker</h1>
+    <p class="sub">Robot control panel</p>
+  </div>
+  <div id="conn" class="badge"><span class="dot"></span><span id="connText">Connecting…</span></div>
+</header>
+
+<section class="card" id="s-function">
+  <h2><span class="n">1</span>Function</h2>
+  <div class="btns">
+    <button class="btn on" data-cmd="on" data-label="Power On">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M6.4 6.9a8 8 0 1 0 11.2 0"/></svg>Power On</button>
+    <button class="btn off" data-cmd="off" data-label="Power Off">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M6.4 6.9a8 8 0 1 0 11.2 0"/></svg>Power Off</button>
+    <button class="btn" data-cmd="home-left" data-label="Home Left">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H8"/><path d="M12 7l-5 5 5 5"/><path d="M4 5v14"/></svg>Home Left</button>
+    <button class="btn" data-cmd="home-right" data-label="Home Right">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h12"/><path d="M12 7l5 5-5 5"/><path d="M20 5v14"/></svg>Home Right</button>
+  </div>
 </section>
 
-<section>
-  <h2>2. Location</h2>
-  <div class="row"><label>Vertical (ft): <b id="vv">0</b></label>
-    <input type="range" id="vertical" min="0" max="11" step="0.1" value="0"></div>
-  <div class="row"><label>Horizontal (ft): <b id="hv">0</b></label>
-    <input type="range" id="horizontal" min="0" max="12" step="0.1" value="0"></div>
-  <div class="row"><label>Speed (ft/s): <b id="sv">0</b></label>
-    <input type="range" id="speed" min="0" max="3" step="0.1" value="0"></div>
-  <button onclick="sendMove()">Send Move</button>
+<section class="card" id="s-state">
+  <h2><span class="n">2</span>Current state</h2>
+  <div class="tiles">
+    <div class="tile"><div class="k">Home position</div><div class="v" id="stHome">—</div></div>
+    <div class="tile"><div class="k">Height</div><div class="v" id="stHeight">—</div></div>
+    <div class="tile"><div class="k">Length</div><div class="v" id="stLength">—</div></div>
+  </div>
+  <p class="small">last reply: <span id="lastReply">…</span></p>
 </section>
 
-<section>
-  <h2>3. Drill</h2>
-  <input id="dname" placeholder="Drill name">
-  <button onclick="saveDrill()">Save as Drill</button>
-  <table>
-    <thead><tr><th>Name</th><th>Vertical</th><th>Horizontal</th><th>Speed</th><th></th></tr></thead>
-    <tbody id="drills"></tbody>
-  </table>
+<section class="card" id="s-position">
+  <h2><span class="n">3</span>Position</h2>
+
+  <svg id="pad" class="pad" viewBox="0 0 880 680" role="group" aria-label="Robot position pad">
+    <defs>
+      <linearGradient id="gOrange" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#e5841f"/><stop offset="1" stop-color="#c8680c"/>
+      </linearGradient>
+      <linearGradient id="gCab" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#8d9198"/><stop offset=".5" stop-color="#7b7f86"/><stop offset="1" stop-color="#6b6f77"/>
+      </linearGradient>
+    </defs>
+
+    <!-- reach limits of the arm block -->
+    <rect class="range" x="27" y="25" width="826" height="275" rx="14"/>
+    <text id="lblL" class="lbl" x="27" y="324">0 ft</text>
+    <text id="lblR" class="lbl" x="853" y="324" text-anchor="end">12 ft</text>
+    <line x1="40" y1="664" x2="840" y2="664" stroke="#e4e7ec" stroke-width="2"/>
+
+    <!-- fixed frame -->
+    <g stroke="#1d2024" stroke-width="1.2">
+      <rect x="100" y="612" width="680" height="16" fill="#4a4e54"/>
+      <rect x="100" y="352" width="680" height="12" fill="#4a4e54"/>
+      <rect x="100" y="396" width="680" height="4" fill="#2b2e33"/>
+      <rect x="100" y="450" width="680" height="9" fill="#4a4e54"/>
+      <rect x="100" y="352" width="13" height="262" fill="#55595f"/>
+      <rect x="434" y="352" width="13" height="262" fill="#55595f"/>
+      <rect x="767" y="352" width="13" height="262" fill="#55595f"/>
+      <polygon points="416,364 434,364 434,381" fill="#3d4046"/>
+      <polygon points="447,364 447,381 465,364" fill="#3d4046"/>
+      <polygon points="749,364 767,364 767,381" fill="#3d4046"/>
+      <rect x="92" y="500" width="14" height="46" rx="2" fill="#6b6f76"/>
+      <g fill="#2b2e33">
+        <rect x="103.5" y="628" width="6" height="14"/><circle cx="106.5" cy="652" r="11"/>
+        <rect x="437.5" y="628" width="6" height="14"/><circle cx="440.5" cy="652" r="11"/>
+        <rect x="770.5" y="628" width="6" height="14"/><circle cx="773.5" cy="652" r="11"/>
+      </g>
+      <g fill="#8d9198" stroke="none">
+        <circle cx="106.5" cy="652" r="4"/><circle cx="440.5" cy="652" r="4"/><circle cx="773.5" cy="652" r="4"/>
+      </g>
+    </g>
+
+    <!-- carriage: slides along the frame (length) -->
+    <g id="carriage" stroke="#1d2024" stroke-width="1.2">
+      <g id="mast" stroke="none">
+        <rect class="bar" x="-40" width="6" fill="#1d2024"/>
+        <rect class="bar" x="-16" width="4" fill="#1d2024"/>
+        <rect class="bar" x="12" width="4" fill="#1d2024"/>
+        <rect class="bar" x="34" width="6" fill="#1d2024"/>
+        <rect class="cross" data-f="0.28" x="-40" width="80" height="5" fill="#2b2e33"/>
+        <rect class="cross" data-f="0.62" x="-40" width="80" height="5" fill="#2b2e33"/>
+        <rect class="cross" data-f="0.96" x="-40" width="80" height="5" fill="#2b2e33"/>
+      </g>
+      <rect x="-50" y="366" width="100" height="8" fill="#3d4046"/>
+      <rect x="-45" y="374" width="90" height="91" fill="url(#gCab)"/>
+      <rect x="-45" y="445" width="90" height="20" fill="#92969c"/>
+      <rect x="-37" y="402" width="11" height="11" fill="#2b2e33"/>
+      <g fill="#4a4e54" stroke="none"><circle cx="-37" cy="455" r="2"/><circle cx="37" cy="455" r="2"/></g>
+
+      <!-- arm block: the draggable part (height) -->
+      <g id="arm" tabindex="0" role="application" aria-label="Arm block. Drag it, or use the arrow keys.">
+        <rect class="ring" x="-128" y="-178" width="256" height="196" rx="10"/>
+        <rect x="-128" y="-178" width="256" height="196" fill="transparent" stroke="none"/>
+        <g fill="#4a4e54">
+          <rect x="-103.5" y="-55" width="7" height="38"/><rect x="-78.5" y="-55" width="7" height="38"/>
+          <rect x="-53.5" y="-55" width="7" height="38"/><rect x="46.5" y="-55" width="7" height="38"/>
+          <rect x="71.5" y="-55" width="7" height="38"/><rect x="96.5" y="-55" width="7" height="38"/>
+        </g>
+        <rect x="-103" y="-17" width="206" height="17" fill="#5a5e65"/>
+        <rect class="panel" x="-118" y="-167" width="93" height="112" rx="3" fill="url(#gOrange)" stroke="#5b3205"/>
+        <rect class="panel" x="25" y="-167" width="93" height="112" rx="3" fill="url(#gOrange)" stroke="#5b3205"/>
+      </g>
+    </g>
+  </svg>
+  <p class="hint">Drag the orange arm block anywhere inside the dashed box. Arrow keys nudge it (Shift for bigger steps).</p>
+
+  <div class="readout">
+    <div class="chip"><span class="k">Height</span><span class="v"><span id="pH">0.0</span> ft</span></div>
+    <div class="chip"><span class="k">Length</span><span class="v"><span id="pL">0.0</span> ft</span></div>
+  </div>
+
+  <div class="speed">
+    <label for="speed">Speed <output id="sv">0.50 ft/s</output></label>
+    <input type="range" id="speed" min="0" max="1" step="0.05" value="0.5">
+    <div class="ends"><span>0 ft/s</span><span id="sMax">1 ft/s</span></div>
+  </div>
+
+  <div class="actions">
+    <button class="btn primary" id="enter">Enter</button>
+    <div class="save">
+      <input id="dname" placeholder="Drill name" maxlength="40" autocomplete="off">
+      <button class="btn" id="save">Save as drill</button>
+    </div>
+  </div>
 </section>
 
-<section>
-  <h2>4. Speed Sensor Record</h2>
-  <table>
-    <thead><tr><th>Time</th><th>Speed (m/s)</th></tr></thead>
-    <tbody id="speeds"></tbody>
-  </table>
+<section class="card" id="s-drill">
+  <h2><span class="n">4</span>Drill</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Name</th><th>Height (ft)</th><th>Length (ft)</th><th>Speed (ft/s)</th><th></th></tr></thead>
+      <tbody id="drills"></tbody>
+    </table>
+  </div>
 </section>
+
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
+(() => {
+"use strict";
 const $ = id => document.getElementById(id);
-const post = (url, body) => fetch(url, {method: "POST",
-  headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})}).then(r => r.json());
+const api = (url, opts) => fetch(url, opts).then(r => r.json());
+const post = (url, body) => api(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                                      body: JSON.stringify(body || {})});
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const snap = v => Math.round(v * 10) / 10;
+const fmt1 = v => Number(v).toFixed(1);
 
-["vertical", "horizontal", "speed"].forEach(k => {
-  const out = {vertical: "vv", horizontal: "hv", speed: "sv"}[k];
-  $(k).oninput = () => $(out).textContent = $(k).value;
+let cfg = {vertical_max: 11, horizontal_max: 12, speed_max: 1};  // replaced by /api/config
+
+/* ---------- feedback ---------- */
+let toastTimer;
+function toast(msg, bad) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "show" + (bad ? " bad" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ""; }, 2800);
+}
+async function run(fn, okMsg) {
+  try {
+    const r = await fn();
+    if (r.ok) toast(okMsg);
+    else toast(r.error ? "Rejected: " + r.error : "Not sent - robot not reachable", true);
+    return r;
+  } catch (e) {
+    toast("Web server unreachable", true);
+    return {ok: false};
+  }
+}
+
+/* ---------- 1. function ---------- */
+document.querySelectorAll("[data-cmd]").forEach(b => {
+  b.onclick = () => {
+    const label = b.dataset.label;
+    if (confirm("Send " + label + "?")) run(() => post("/api/cmd/" + b.dataset.cmd), label + " sent");
+  };
 });
-const vals = () => ({vertical: $("vertical").value, horizontal: $("horizontal").value, speed: $("speed").value});
 
-function cmd(n) {
-  if (n === "kill" || confirm("Send " + n + "?")) post("/api/cmd/" + n);
-}
-function sendMove() { post("/api/move", vals()); }
-async function saveDrill() {
-  const r = await post("/api/drills", {name: $("dname").value, ...vals()});
-  if (!r.ok) return alert(r.error);
-  $("dname").value = ""; loadDrills();
-}
-async function loadDrills() {
-  const rows = await (await fetch("/api/drills")).json();
-  $("drills").innerHTML = rows.map(r => `<tr><td>${r.name.replace(/</g, "&lt;")}</td>
-    <td>${r.vertical}</td><td>${r.horizontal}</td><td>${r.speed}</td>
-    <td><button onclick="post('/api/drills/${r.id}/enter')">Enter</button>
-    <button onclick="delDrill(${r.id})">Del</button></td></tr>`).join("");
-}
-async function delDrill(id) {
-  await fetch("/api/drills/" + id, {method: "DELETE"}); loadDrills();
+/* ---------- 2. current state ---------- */
+function setConn(ok, text) {
+  $("conn").className = "badge" + (ok ? " on" : "");
+  $("connText").textContent = text || (ok ? "Robot connected" : "Robot offline");
 }
 async function poll() {
   try {
-    const s = await (await fetch("/api/status")).json();
-    $("status").textContent = "status: " + (s.connected ? "connected" : "DISCONNECTED") + " | last: " + s.reply;
-    const rows = await (await fetch("/api/speed")).json();
-    $("speeds").innerHTML = rows.map(r => `<tr><td>${r.ts}</td><td>${r.speed}</td></tr>`).join("");
-  } catch (e) { $("status").textContent = "status: web server unreachable"; }
+    const s = await api("/api/status");
+    const on = s.connected;
+    setConn(on);
+    $("stHome").textContent = !on ? "—" : s.home === "left" ? "Left" : s.home === "right" ? "Right" : "Not set";
+    $("stHeight").textContent = on && s.height != null ? fmt1(s.height) + " ft" : "—";
+    $("stLength").textContent = on && s.length != null ? fmt1(s.length) + " ft" : "—";
+    $("lastReply").textContent = s.reply;
+  } catch (e) {
+    setConn(false, "Web server unreachable");
+    ["stHome", "stHeight", "stLength"].forEach(id => { $(id).textContent = "—"; });
+  }
 }
-loadDrills(); poll(); setInterval(poll, 1000);
+
+/* ---------- 3. position pad ---------- */
+// Drawing limits in SVG units, taken from the four reference views:
+//   carriage center: CX_MIN = most left, CX_MAX = most right
+//   arm bracket bottom: BY_DOWN = most down, BY_UP = most up
+const G = {CX_MIN: 145, CX_MAX: 735, BY_UP: 192, BY_DOWN: 355, DECK: 366};
+const pos = {len: 0, h: 0};  // feet; (0, 0) = most left, most down
+
+const ftToPx = (len, h) => ({
+  cx: G.CX_MIN + len / cfg.horizontal_max * (G.CX_MAX - G.CX_MIN),
+  by: G.BY_DOWN - h / cfg.vertical_max * (G.BY_DOWN - G.BY_UP),
+});
+const pxToFt = (cx, by) => ({
+  len: (cx - G.CX_MIN) / (G.CX_MAX - G.CX_MIN) * cfg.horizontal_max,
+  h: (G.BY_DOWN - by) / (G.BY_DOWN - G.BY_UP) * cfg.vertical_max,
+});
+
+const bars = [...document.querySelectorAll("#mast .bar")];
+const cross = [...document.querySelectorAll("#mast .cross")];
+const arm = $("arm"), pad = $("pad");
+
+// The mast has a fixed length (from the carriage deck up to the highest the arm block
+// reaches); the arm block slides along it. Down, the mast stands up between the two panels.
+const MAST_LEN = G.DECK - G.BY_UP;
+bars.forEach(b => { b.setAttribute("y", G.BY_UP); b.setAttribute("height", MAST_LEN); });
+cross.forEach(c => c.setAttribute("y", G.BY_UP + MAST_LEN * c.dataset.f - 2.5));
+
+function render() {
+  const p = ftToPx(pos.len, pos.h);
+  $("carriage").setAttribute("transform", `translate(${p.cx} 0)`);
+  arm.setAttribute("transform", `translate(0 ${p.by})`);
+  $("pH").textContent = fmt1(pos.h);
+  $("pL").textContent = fmt1(pos.len);
+}
+function setFt(len, h) {
+  pos.len = snap(clamp(len, 0, cfg.horizontal_max));
+  pos.h = snap(clamp(h, 0, cfg.vertical_max));
+  render();
+}
+
+function toSvg(e) {
+  const pt = pad.createSVGPoint();
+  pt.x = e.clientX; pt.y = e.clientY;
+  return pt.matrixTransform(pad.getScreenCTM().inverse());
+}
+let grab = null;
+arm.addEventListener("pointerdown", e => {
+  const p = toSvg(e), c = ftToPx(pos.len, pos.h);
+  grab = {dx: p.x - c.cx, dy: p.y - c.by};  // keep the grab point under the pointer
+  arm.setPointerCapture(e.pointerId);
+  arm.classList.add("drag");
+  arm.focus({preventScroll: true});
+  e.preventDefault();
+});
+arm.addEventListener("pointermove", e => {
+  if (!grab) return;
+  const p = toSvg(e), f = pxToFt(p.x - grab.dx, p.y - grab.dy);
+  setFt(f.len, f.h);
+});
+const drop = () => { grab = null; arm.classList.remove("drag"); };
+arm.addEventListener("pointerup", drop);
+arm.addEventListener("pointercancel", drop);
+arm.addEventListener("keydown", e => {
+  const s = e.shiftKey ? 1 : 0.1;
+  const d = {ArrowLeft: [-s, 0], ArrowRight: [s, 0], ArrowUp: [0, s], ArrowDown: [0, -s]}[e.key];
+  if (!d) return;
+  e.preventDefault();
+  setFt(pos.len + d[0], pos.h + d[1]);
+});
+
+const speedEl = $("speed");
+const speedLabel = () => { $("sv").textContent = Number(speedEl.value).toFixed(2) + " ft/s"; };
+speedEl.addEventListener("input", speedLabel);
+
+const vals = () => ({vertical: pos.h, horizontal: pos.len, speed: Number(speedEl.value)});
+
+$("enter").onclick = () => {
+  const v = vals();
+  run(() => post("/api/move", v),
+      `Sent: height ${fmt1(v.vertical)} ft, length ${fmt1(v.horizontal)} ft, ${v.speed.toFixed(2)} ft/s`);
+};
+async function saveDrill() {
+  const name = $("dname").value.trim();
+  if (!name) { toast("Give the drill a name first", true); $("dname").focus(); return; }
+  const r = await run(() => post("/api/drills", {name, ...vals()}), `Saved drill "${name}"`);
+  if (r.ok) { $("dname").value = ""; loadDrills(); }
+}
+$("save").onclick = saveDrill;
+$("dname").addEventListener("keydown", e => { if (e.key === "Enter") saveDrill(); });
+
+/* ---------- 4. drills ---------- */
+let drills = [], selectedId = null;
+const el = (tag, cls, text) => {
+  const x = document.createElement(tag);
+  if (cls) x.className = cls;
+  if (text != null) x.textContent = text;
+  return x;
+};
+const button = (text, cls, fn) => { const b = el("button", cls, text); b.onclick = fn; return b; };
+
+function renderDrills() {
+  const body = $("drills");
+  body.textContent = "";
+  if (!drills.length) {
+    const tr = el("tr"), td = el("td", "empty", "No drills yet. Set a position above and save it as a drill.");
+    td.colSpan = 5; tr.append(td); body.append(tr);
+    return;
+  }
+  for (const r of drills) {
+    const tr = el("tr", r.id === selectedId ? "sel" : "");
+    [r.name, fmt1(r.vertical), fmt1(r.horizontal), Number(r.speed).toFixed(2)]
+      .forEach(t => tr.append(el("td", "", t)));
+    const act = el("td", "act");
+    act.append(button("Select", "btn sm primary", () => selectDrill(r)), " ",
+               button("Delete", "btn sm danger", () => deleteDrill(r)));
+    tr.append(act);
+    body.append(tr);
+  }
+}
+async function loadDrills() {
+  try { drills = await api("/api/drills"); } catch (e) { return; }
+  renderDrills();
+}
+function selectDrill(r) {  // loads it into the pad; nothing moves until Enter is pressed
+  setFt(r.horizontal, r.vertical);
+  speedEl.value = clamp(r.speed, 0, cfg.speed_max);
+  speedLabel();
+  selectedId = r.id;
+  renderDrills();
+  $("s-position").scrollIntoView({behavior: "smooth", block: "center"});
+  toast(`Drill "${r.name}" loaded. Press Enter to send it.`);
+}
+async function deleteDrill(r) {
+  if (!confirm(`Delete drill "${r.name}"?`)) return;
+  try { await api("/api/drills/" + r.id, {method: "DELETE"}); } catch (e) { return toast("Web server unreachable", true); }
+  if (selectedId === r.id) selectedId = null;
+  loadDrills();
+}
+
+/* ---------- start ---------- */
+(async () => {
+  try { cfg = await api("/api/config"); } catch (e) { /* keep defaults */ }
+  speedEl.max = cfg.speed_max;
+  $("sMax").textContent = cfg.speed_max + " ft/s";
+  $("lblR").textContent = cfg.horizontal_max + " ft";
+  speedLabel();
+  setFt(0, 0);
+  loadDrills();
+  poll();
+  setInterval(poll, 1000);
+})();
+})();
 </script>
 </body>
 </html>

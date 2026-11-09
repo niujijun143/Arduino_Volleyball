@@ -9,7 +9,8 @@ icon: 😀
 
 # A list of network ports that the application exposes.
 # Example: [80, 443]
-ports: []
+# 5000 = the volleyball blocker web interface (see python/main.py)
+ports: [5000]
 
 # A list of bricks used by this application.
 bricks: []

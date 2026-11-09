@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi Control</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 12px; }
+  section { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+  h2 { margin-top: 0; }
+  button { padding: 8px 14px; margin: 3px; font-size: 1rem; }
+  .kill { background: #c00; color: #fff; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .row label { width: 150px; } .row input[type=range] { flex: 1; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; }
+  #status { font-family: monospace; color: #555; }
+</style>
+</head>
+<body>
+<p id="status">status: ...</p>
+
+<section>
+  <h2>1. Function</h2>
+  <button onclick="cmd('home')">Home</button>
+  <button onclick="cmd('on')">Power On</button>
+  <button onclick="cmd('off')">Power Off</button>
+  <button class="kill" onclick="cmd('kill')">Kill</button>
+</section>
+
+<section>
+  <h2>2. Location</h2>
+  <div class="row"><label>Vertical (ft): <b id="vv">0</b></label>
+    <input type="range" id="vertical" min="0" max="11" step="0.1" value="0"></div>
+  <div class="row"><label>Horizontal (ft): <b id="hv">0</b></label>
+    <input type="range" id="horizontal" min="0" max="12" step="0.1" value="0"></div>
+  <div class="row"><label>Speed (ft/s): <b id="sv">0</b></label>
+    <input type="range" id="speed" min="0" max="3" step="0.1" value="0"></div>
+  <button onclick="sendMove()">Send Move</button>
+</section>
+
+<section>
+  <h2>3. Drill</h2>
+  <input id="dname" placeholder="Drill name">
+  <button onclick="saveDrill()">Save as Drill</button>
+  <table>
+    <thead><tr><th>Name</th><th>Vertical</th><th>Horizontal</th><th>Speed</th><th></th></tr></thead>
+    <tbody id="drills"></tbody>
+  </table>
+</section>
+
+<section>
+  <h2>4. Speed Sensor Record</h2>
+  <table>
+    <thead><tr><th>Time</th><th>Speed (m/s)</th></tr></thead>
+    <tbody id="speeds"></tbody>
+  </table>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+const post = (url, body) => fetch(url, {method: "POST",
+  headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})}).then(r => r.json());
+
+["vertical", "horizontal", "speed"].forEach(k => {
+  const out = {vertical: "vv", horizontal: "hv", speed: "sv"}[k];
+  $(k).oninput = () => $(out).textContent = $(k).value;
+});
+const vals = () => ({vertical: $("vertical").value, horizontal: $("horizontal").value, speed: $("speed").value});
+
+function cmd(n) {
+  if (n === "kill" || confirm("Send " + n + "?")) post("/api/cmd/" + n);
+}
+function sendMove() { post("/api/move", vals()); }
+async function saveDrill() {
+  const r = await post("/api/drills", {name: $("dname").value, ...vals()});
+  if (!r.ok) return alert(r.error);
+  $("dname").value = ""; loadDrills();
+}
+async function loadDrills() {
+  const rows = await (await fetch("/api/drills")).json();
+  $("drills").innerHTML = rows.map(r => `<tr><td>${r.name.replace(/</g, "&lt;")}</td>
+    <td>${r.vertical}</td><td>${r.horizontal}</td><td>${r.speed}</td>
+    <td><button onclick="post('/api/drills/${r.id}/enter')">Enter</button>
+    <button onclick="delDrill(${r.id})">Del</button></td></tr>`).join("");
+}
+async function delDrill(id) {
+  await fetch("/api/drills/" + id, {method: "DELETE"}); loadDrills();
+}
+async function poll() {
+  try {
+    const s = await (await fetch("/api/status")).json();
+    $("status").textContent = "status: " + (s.connected ? "connected" : "DISCONNECTED") + " | last: " + s.reply;
+    const rows = await (await fetch("/api/speed")).json();
+    $("speeds").innerHTML = rows.map(r => `<tr><td>${r.ts}</td><td>${r.speed}</td></tr>`).join("");
+  } catch (e) { $("status").textContent = "status: web server unreachable"; }
+}
+loadDrills(); poll(); setInterval(poll, 1000);
+</script>
+</body>
+</html>

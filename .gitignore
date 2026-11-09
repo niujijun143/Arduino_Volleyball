@@ -1,2 +1,7 @@
 # ignore app cache folder
 .cache/
+
+# Python bytecode and the website's runtime database (created on first start)
+__pycache__/
+*.pyc
+python/data.db
